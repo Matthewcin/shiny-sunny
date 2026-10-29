@@ -1,0 +1,149 @@
+/**
+ * YELLOWER DESIGN STUDIO® — Backend unificado
+ * -------------------------------------------------------------------
+ * Un solo script atiende DOS formularios de tu web:
+ *
+ *  1) Aceptación de Términos y Condiciones (página /tyc)
+ *     → guarda la fila en la hoja activa (tus leads compradores) y envía
+ *       un correo de confirmación.
+ *
+ *  2) Autorización para el uso de IA (página /ia/autorizacion)
+ *     → guarda la fila en una pestaña llamada "Autorizaciones IA"
+ *       (se crea sola la primera vez) y envía un correo de confirmación
+ *       con el código de registro.
+ *
+ * ===================== CÓMO ACTUALIZARLO =====================
+ * Si ya tienes el script anterior publicado:
+ *  1. Abre tu Google Sheet → Extensiones → Apps Script.
+ *  2. Borra el código anterior y pega TODO este archivo.
+ *  3. Guarda. Luego: Implementar → Gestionar implementaciones →
+ *     (ícono de lápiz) → Versión: "Nueva versión" → Implementar.
+ *     La URL NO cambia, así que no tienes que tocar la web de términos.
+ *
+ * Si es tu primera vez:
+ *  1. Crea un Google Sheet para tus leads → Extensiones → Apps Script.
+ *  2. Pega este archivo completo y guarda.
+ *  3. Implementar → Nueva implementación → tipo "Aplicación web".
+ *     Ejecutar como: "Yo". Quién tiene acceso: "Cualquier usuario".
+ *  4. Autoriza los permisos (si ves "app no verificada": Avanzado →
+ *     Ir a [nombre] → Permitir).
+ *  5. Copia la URL de la aplicación web y pégala en:
+ *       - terminos-y-condiciones.html  → constante GOOGLE_SCRIPT_URL
+ *       - autorizacion.html            → constante GOOGLE_SCRIPT_URL
+ *     (la MISMA URL sirve para las dos páginas).
+ *
+ * Antes de publicar, cambia en el código de abajo los enlaces
+ * "https://yellowerdesignstudio.com/tyc" si fuera necesario.
+ * ===========================================================
+ */
+
+var URL_TERMINOS = 'https://yellowerdesignstudio.com/tyc';
+var URL_AUTORIZACION = 'https://yellowerdesignstudio.com/ia/autorizacion';
+
+function doPost(e) {
+  try {
+    var data = JSON.parse(e.postData.contents);
+
+    if (data.tipo === 'autorizacion_ia') {
+      guardarAutorizacionIA(data);
+    } else {
+      guardarAceptacionTerminos(data);
+    }
+
+    return ContentService
+      .createTextOutput(JSON.stringify({ status: 'ok' }))
+      .setMimeType(ContentService.MimeType.JSON);
+
+  } catch (err) {
+    return ContentService
+      .createTextOutput(JSON.stringify({ status: 'error', message: err.message }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+/* ---------- 1) Términos y Condiciones ---------- */
+function guardarAceptacionTerminos(data) {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow([
+      'Fecha', 'Nombre completo', 'Tipo de identificación',
+      'Número de identificación', 'WhatsApp', 'Correo electrónico',
+      'Documento aceptado'
+    ]);
+  }
+
+  sheet.appendRow([
+    new Date(), data.nombre, data.tipoId, data.numeroId,
+    data.whatsapp, data.correo,
+    data.documento || 'Términos y Condiciones — Yellower Design Studio®'
+  ]);
+
+  var asunto = 'Confirmación de aceptación — Yellower Design Studio®';
+  var cuerpo =
+    'Hola ' + data.nombre + ',\n\n' +
+    'Confirmamos que aceptaste los Términos y Condiciones de Yellower Design Studio® ' +
+    'el ' + fechaBogota() + '.\n\n' +
+    'Datos registrados:\n' +
+    '— Nombre: ' + data.nombre + '\n' +
+    '— Identificación: ' + data.tipoId + ' ' + data.numeroId + '\n' +
+    '— WhatsApp: ' + data.whatsapp + '\n' +
+    '— Correo: ' + data.correo + '\n\n' +
+    'Puedes consultar los Términos y Condiciones completos aquí:\n' +
+    URL_TERMINOS + '\n\n' +
+    'Gracias por confiar en Yellower Design Studio®.\n' +
+    'Marcas con intención ✳';
+
+  MailApp.sendEmail(data.correo, asunto, cuerpo);
+}
+
+/* ---------- 2) Autorización de uso de IA ---------- */
+function guardarAutorizacionIA(data) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('Autorizaciones IA') || ss.insertSheet('Autorizaciones IA');
+
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow([
+      'Fecha', 'Código de registro', 'Cliente / Empresa', 'Correo',
+      'Proyecto', 'Materiales', 'Finalidad', 'Tratamiento',
+      'Herramienta de IA', 'Nombre de quien autoriza', 'Consentimientos (texto aceptado)'
+    ]);
+  }
+
+  var materiales = (data.materiales || []).join(', ');
+  var consentimientos = (data.consentimientos || []).join(' | ');
+
+  sheet.appendRow([
+    new Date(), data.codigo, data.cliente, data.correo,
+    data.proyecto, materiales, data.finalidad, data.tratamiento,
+    data.herramienta, data.firma, consentimientos
+  ]);
+
+  var asunto = 'Autorización confirmada — Yellower + IA (' + data.codigo + ')';
+  var cuerpo =
+    'Hola ' + data.firma + ',\n\n' +
+    'Autorización confirmada ✦\n' +
+    'Has autorizado el uso de Inteligencia Artificial en tu proyecto.\n\n' +
+    'Resumen de lo que autorizaste:\n' +
+    '— Código de registro: ' + data.codigo + '\n' +
+    '— Fecha: ' + fechaBogota() + '\n' +
+    '— Proyecto: ' + data.proyecto + '\n' +
+    '— Materiales: ' + materiales + '\n' +
+    '— Finalidad: ' + data.finalidad + '\n' +
+    '— Tratamiento: ' + data.tratamiento + '\n' +
+    '— Herramienta de IA: ' + data.herramienta + '\n\n' +
+    'Tu autorización fue registrada como evidencia de consentimiento y aplica ' +
+    'únicamente al tratamiento específico descrito arriba. No constituye una cesión ' +
+    'de derechos de autor.\n\n' +
+    'Conserva también la imagen del comprobante que descargaste al confirmar.\n' +
+    'Términos y Condiciones: ' + URL_TERMINOS + '\n\n' +
+    'En Yellower + IA trabajamos desde un coworking consciente, combinando creatividad ' +
+    'humana, estrategia y tecnología para potenciar tu negocio.\n' +
+    'La creatividad es humana. La tecnología nos potencia.';
+
+  MailApp.sendEmail(data.correo, asunto, cuerpo);
+}
+
+function fechaBogota() {
+  return new Date().toLocaleString('es-CO', { timeZone: 'America/Bogota' });
+}

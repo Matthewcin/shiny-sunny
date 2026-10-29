@@ -1,0 +1,243 @@
+/**
+ * YELLOWER DESIGN STUDIO® — Backend unificado
+ * -------------------------------------------------------------------
+ * Un solo script atiende DOS formularios de tu web:
+ *
+ *  1) Aceptación de Términos y Condiciones (página /tyc)
+ *     → guarda la fila en la hoja activa (tus leads compradores) y envía
+ *       un correo de confirmación.
+ *
+ *  2) Autorización para el uso de IA (página /ia/autorizacion)
+ *     → guarda la fila en una pestaña llamada "Autorizaciones IA"
+ *       (se crea sola la primera vez) y envía un correo de confirmación
+ *       con el código de registro.
+ *
+ *  3) Yellower Freebies (biblioteca de recursos gratuitos)
+ *     → guarda cada registro en la pestaña "Freebies Leads" (sin duplicar
+ *       correos), anota las descargas en "Freebies Descargas", envía un
+ *       correo de bienvenida y permite recuperar el acceso por correo.
+ *
+ * ===================== CÓMO ACTUALIZARLO =====================
+ * Si ya tienes el script anterior publicado:
+ *  1. Abre tu Google Sheet → Extensiones → Apps Script.
+ *  2. Borra el código anterior y pega TODO este archivo.
+ *  3. Guarda. Luego: Implementar → Gestionar implementaciones →
+ *     (ícono de lápiz) → Versión: "Nueva versión" → Implementar.
+ *     La URL NO cambia, así que no tienes que tocar la web de términos.
+ *
+ * Si es tu primera vez:
+ *  1. Crea un Google Sheet para tus leads → Extensiones → Apps Script.
+ *  2. Pega este archivo completo y guarda.
+ *  3. Implementar → Nueva implementación → tipo "Aplicación web".
+ *     Ejecutar como: "Yo". Quién tiene acceso: "Cualquier usuario".
+ *  4. Autoriza los permisos (si ves "app no verificada": Avanzado →
+ *     Ir a [nombre] → Permitir).
+ *  5. Copia la URL de la aplicación web y pégala en:
+ *       - terminos-y-condiciones.html  → constante GOOGLE_SCRIPT_URL
+ *       - autorizacion.html            → constante GOOGLE_SCRIPT_URL
+ *     (la MISMA URL sirve para las dos páginas).
+ *
+ * Antes de publicar, cambia en el código de abajo los enlaces
+ * "https://yellowerdesignstudio.com/tyc" si fuera necesario.
+ * ===========================================================
+ */
+
+var URL_TERMINOS = 'https://yellowerdesignstudio.com/tyc';
+var URL_AUTORIZACION = 'https://yellowerdesignstudio.com/ia/autorizacion';
+var URL_FREEBIES = 'https://yellowerdesignstudio.com/freebies';  // 👈 ajusta si la página queda en otra dirección
+
+function doPost(e) {
+  try {
+    var data = JSON.parse(e.postData.contents);
+
+    if (data.tipo === 'autorizacion_ia') {
+      guardarAutorizacionIA(data);
+    } else if (data.tipo === 'freebies_registro') {
+      guardarFreebiesRegistro(data);
+    } else if (data.tipo === 'freebies_descarga') {
+      guardarFreebiesDescarga(data);
+    } else {
+      guardarAceptacionTerminos(data);
+    }
+
+    return ContentService
+      .createTextOutput(JSON.stringify({ status: 'ok' }))
+      .setMimeType(ContentService.MimeType.JSON);
+
+  } catch (err) {
+    return ContentService
+      .createTextOutput(JSON.stringify({ status: 'error', message: err.message }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+/* ---------- 1) Términos y Condiciones ---------- */
+function guardarAceptacionTerminos(data) {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow([
+      'Fecha', 'Nombre completo', 'Tipo de identificación',
+      'Número de identificación', 'WhatsApp', 'Correo electrónico',
+      'Documento aceptado'
+    ]);
+  }
+
+  sheet.appendRow([
+    new Date(), data.nombre, data.tipoId, data.numeroId,
+    data.whatsapp, data.correo,
+    data.documento || 'Términos y Condiciones — Yellower Design Studio®'
+  ]);
+
+  var asunto = 'Confirmación de aceptación — Yellower Design Studio®';
+  var cuerpo =
+    'Hola ' + data.nombre + ',\n\n' +
+    'Confirmamos que aceptaste los Términos y Condiciones de Yellower Design Studio® ' +
+    'el ' + fechaBogota() + '.\n\n' +
+    'Datos registrados:\n' +
+    '— Nombre: ' + data.nombre + '\n' +
+    '— Identificación: ' + data.tipoId + ' ' + data.numeroId + '\n' +
+    '— WhatsApp: ' + data.whatsapp + '\n' +
+    '— Correo: ' + data.correo + '\n\n' +
+    'Puedes consultar los Términos y Condiciones completos aquí:\n' +
+    URL_TERMINOS + '\n\n' +
+    'Gracias por confiar en Yellower Design Studio®.\n' +
+    'Marcas con intención';
+
+  MailApp.sendEmail(data.correo, asunto, cuerpo);
+}
+
+/* ---------- 2) Autorización de uso de IA ---------- */
+function guardarAutorizacionIA(data) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('Autorizaciones IA') || ss.insertSheet('Autorizaciones IA');
+
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow([
+      'Fecha', 'Código de registro', 'Cliente / Empresa', 'Correo',
+      'Proyecto', 'Materiales', 'Finalidad', 'Tratamiento',
+      'Herramienta de IA', 'Nombre de quien autoriza', 'Consentimientos (texto aceptado)'
+    ]);
+  }
+
+  var materiales = (data.materiales || []).join(', ');
+  var consentimientos = (data.consentimientos || []).join(' | ');
+
+  sheet.appendRow([
+    new Date(), data.codigo, data.cliente, data.correo,
+    data.proyecto, materiales, data.finalidad, data.tratamiento,
+    data.herramienta, data.firma, consentimientos
+  ]);
+
+  var asunto = 'Autorización confirmada — Yellower + IA (' + data.codigo + ')';
+  var cuerpo =
+    'Hola ' + data.firma + ',\n\n' +
+    'Autorización confirmada ✦\n' +
+    'Has autorizado el uso de Inteligencia Artificial en tu proyecto.\n\n' +
+    'Resumen de lo que autorizaste:\n' +
+    '— Código de registro: ' + data.codigo + '\n' +
+    '— Fecha: ' + fechaBogota() + '\n' +
+    '— Proyecto: ' + data.proyecto + '\n' +
+    '— Materiales: ' + materiales + '\n' +
+    '— Finalidad: ' + data.finalidad + '\n' +
+    '— Tratamiento: ' + data.tratamiento + '\n' +
+    '— Herramienta de IA: ' + data.herramienta + '\n\n' +
+    'Tu autorización fue registrada como evidencia de consentimiento y aplica ' +
+    'únicamente al tratamiento específico descrito arriba. No constituye una cesión ' +
+    'de derechos de autor.\n\n' +
+    'Conserva también la imagen del comprobante que descargaste al confirmar.\n' +
+    'Términos y Condiciones: ' + URL_TERMINOS + '\n\n' +
+    'En Yellower + IA trabajamos desde un coworking consciente, combinando creatividad ' +
+    'humana, estrategia y tecnología para potenciar tu negocio.\n' +
+    'La creatividad es humana. La tecnología nos potencia.';
+
+  MailApp.sendEmail(data.correo, asunto, cuerpo);
+}
+
+function fechaBogota() {
+  return new Date().toLocaleString('es-CO', { timeZone: 'America/Bogota' });
+}
+
+/* ---------- 3) Yellower Freebies ---------- */
+function guardarFreebiesRegistro(data) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('Freebies Leads') || ss.insertSheet('Freebies Leads');
+
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow([
+      'Fecha', 'Nombre', 'Correo', 'País',
+      'Acepta política de datos', 'Acepta comunicaciones', 'Origen'
+    ]);
+  }
+
+  var correo = String(data.correo || '').toLowerCase().trim();
+  var politica = data.aceptaPolitica ? 'Sí' : 'No';
+  var comunicaciones = data.aceptaComunicaciones ? 'Sí' : 'No';
+
+  // Si el correo ya existe, actualiza la fila (no duplica ni reenvía bienvenida)
+  var fila = buscarFilaPorCorreo(sheet, correo, 3);
+  if (fila > 0) {
+    sheet.getRange(fila, 2, 1, 6).setValues([[
+      data.nombre, correo, data.pais, politica, comunicaciones, data.origen || 'yellower-freebies'
+    ]]);
+    return;
+  }
+
+  sheet.appendRow([
+    new Date(), data.nombre, correo, data.pais,
+    politica, comunicaciones, data.origen || 'yellower-freebies'
+  ]);
+
+  var asunto = 'Tu biblioteca de Yellower Freebies está desbloqueada';
+  var cuerpo =
+    'Hola ' + data.nombre + ',\n\n' +
+    '¡Gracias por registrarte! Tu biblioteca de recursos gratuitos ya está desbloqueada.\n\n' +
+    'Entra cuando quieras aquí:\n' + URL_FREEBIES + '\n\n' +
+    'Si entras desde otro dispositivo, usa la opción "Recupera tu acceso" ' +
+    'con este mismo correo.\n\n' +
+    'En Yellower creemos que las grandes ideas crecen cuando se comparten.\n' +
+    'Yellower Design Studio®\n' +
+    'La creatividad es humana. La tecnología nos potencia.';
+
+  MailApp.sendEmail(correo, asunto, cuerpo);
+}
+
+function guardarFreebiesDescarga(data) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('Freebies Descargas') || ss.insertSheet('Freebies Descargas');
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow(['Fecha', 'Correo', 'Recurso']);
+  }
+  sheet.appendRow([new Date(), String(data.correo || '').toLowerCase(), data.recurso]);
+}
+
+// Recuperar acceso: la web consulta ?action=check&email=...
+// Solo responde si el correo está registrado (no devuelve ningún otro dato).
+function doGet(e) {
+  var out = { registered: false };
+  try {
+    if (e && e.parameter && e.parameter.action === 'check') {
+      var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Freebies Leads');
+      var correo = String(e.parameter.email || '').toLowerCase().trim();
+      if (sheet && correo && buscarFilaPorCorreo(sheet, correo, 3) > 0) {
+        out = { registered: true };
+      }
+    }
+  } catch (err) {
+    out = { registered: false, error: true };
+  }
+  return ContentService
+    .createTextOutput(JSON.stringify(out))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+// Devuelve el número de fila donde está el correo (0 si no existe)
+function buscarFilaPorCorreo(sheet, correo, columna) {
+  var ultima = sheet.getLastRow();
+  if (ultima < 2) return 0;
+  var valores = sheet.getRange(2, columna, ultima - 1, 1).getValues();
+  for (var i = 0; i < valores.length; i++) {
+    if (String(valores[i][0]).toLowerCase().trim() === correo) return i + 2;
+  }
+  return 0;
+}
